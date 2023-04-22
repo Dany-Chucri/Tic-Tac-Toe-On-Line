@@ -21,6 +21,37 @@
 // temp signal handlers
 volatile int active = 1;
 
+
+void tokenize(char* buf, char** tokens) {
+    char* ptr;
+    const char delim = 32;
+    int tokptr1 = 0; int tokptr2 = 0;
+    if(buf != NULL) ptr = buf;
+    else return;
+
+
+    while(*ptr == delim && *(ptr+1) != '\0') {  ////moves it up if it starts with a whitespace
+        ptr++;
+    }
+
+    while(*ptr != '\0') {
+        if(*ptr != '|') { //if(*ptr != delim && *ptr != '|') {
+            tokens[tokptr1][tokptr2] = *ptr;
+            tokptr2++;
+            ptr++;
+        }
+        else if (*ptr == '|'){
+            tokptr1++; tokptr2 = 0;
+            ptr++;
+        }
+    }
+
+    return;
+
+}
+
+
+
 void handler(int signum)
 {
     active = 0;
@@ -54,7 +85,30 @@ void read_data(int sock, struct sockaddr *rem, socklen_t rem_len)
     while (active && (bytes = read(sock, buf, BUFSIZE)) > 0) {
         buf[bytes] = '\0';
         printf("[%s:%s] read %d bytes |%s|\n", host, port, bytes, buf);
+
+
+//inspect the buffer to see if it contains any of the key words///////// NEW SHIV ADDITION
+    char** tokens = malloc(sizeof(char*) * bytes);
+    memset(tokens, (char) 0, bytes);
+    for (int i = 0; i < bytes; i++) {
+        tokens[i] = malloc(sizeof(char) * bytes);
+        memset(tokens[i], (char) 0, bytes);
     }
+
+    tokenize(buf, tokens);
+    printf("First Token: %s\n", tokens[0]);
+
+    //if (first token is PLAY, MOVE, RSGN, or DRAW) //Make methods for each of these that do their proper function and returns -1 if unsuccessful or invalid
+    if(strcmp(tokens[0], "PLAY") == 0) printf("Player Name: %s\n", tokens[2]);
+
+    for (int i = 0; i < bytes; i++) {
+        free(tokens[i]);
+    }
+    free(tokens);
+
+/////////////////////////////////////////////////////////////////////////
+    }
+
 
     if (bytes == 0) {
         printf("[%s:%s] got EOF\n", host, port);
@@ -139,7 +193,7 @@ int main(int argc, char** argv)
         }
 
         read_data(sock, (struct sockaddr *)&remote_host, remote_host_len);
-        }
+    }
 
     puts("Shutting down");
     close(listener);
