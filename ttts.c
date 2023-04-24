@@ -269,6 +269,17 @@ msg_err parsePacket(char* buf, int fd)
     return VALID;
 }
 
+char* createBoard() {
+    char* board = malloc(9 * sizeof(char));
+    memset(board, (char) 78, 9); //char 78 is '.'
+    return board;
+}
+void printBoard(char* board) {
+    for (int i = 0; i < 9; i++) { //could also just print %s tbh
+        printf("%c", board[i]);
+    }
+}
+
 // Temporary method for reading data from a client (threaded approach)
 void *read_data(void *arg)
 {
@@ -326,9 +337,38 @@ void *read_data(void *arg)
         }
         else {
             printf("First Token: %s\n", tokens[0]);
-            //if (first token is PLAY, MOVE, RSGN, or DRAW) // Make methods for each of these that do their proper function and returns -1 if unsuccessful or invalid
-            if(strcmp(tokens[0], "PLAY") == 0) printf("Player Name: %s\n", tokens[2]);
-        
+            //if (first token is PLAY, MOVE, RSGN, or DRAW) //Make methods for each of these that do their proper function and returns -1 if unsuccessful or invalid
+            if(checkType(tokens[0]) == PLAY) {
+                printf("Player Name: %s\n", tokens[2]); ///CHECK IF NAME IS TAKEN
+                char* board = createBoard();
+                active_game = 1;
+
+            }
+            else if(checkType(tokens[0]) == MOVE) ;
+            else if(checkType(tokens[0]) == RSGN) {
+                active_game = 0;
+                //remove the name from the global linked list
+            }
+            else if(checkType(tokens[0]) == DRAW && tokens[2][0] == 'S') {
+                //request other client for a draw
+                draw_match = 1; //means draw is suggested
+                write();
+            }
+            else if(checkType(tokens[0]) == DRAW && tokens[2][0] == 'R') {
+                //
+                if(draw_match == 0) printf("INVL TYPE - TRY AGAIN"); //no suggestion was made to reject or accept yet
+                else {
+
+                }
+            }
+            else if(checkType(tokens[0]) == DRAW && tokens[2][0] == 'A') {
+                //
+                if(draw_match == 0) printf("INVL TYPE - TRY AGAIN"); //no suggestion was made to reject or accept yet
+                else {
+
+                }
+            }
+
         }
 
         for (int i = 0; i < bytes; i++) {
