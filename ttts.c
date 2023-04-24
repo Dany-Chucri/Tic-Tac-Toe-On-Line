@@ -31,6 +31,9 @@ typedef enum {
 // Temp signal handlers
 volatile int active = 1;
 
+// Checks if game is going on
+volatile int active_game = 0;
+
 void handler(int signum)
 {
     active = 0;
@@ -331,7 +334,8 @@ void *read_data(void *arg)
             tokens[i] = malloc(sizeof(char) * bytes);
             memset(tokens[i], (char) 0, bytes);
         }
-
+        
+        int draw_match = 0;
         int tokerror = tokenize(buf, tokens);
         if (tokerror != 0) {//error has occured tokenizing
             printf("Error occured while tokenizing!\n"); // FIXME more specific error checking
