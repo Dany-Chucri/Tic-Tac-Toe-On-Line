@@ -129,7 +129,7 @@ msg_err parsePacket(char* buf, int fd)
     msgtype[4] = '\0';
     msg_type type = INVLTYPE;
 
-    char size[4];// Size ranges from 0-255
+    char size[4];// Size ranges from 0-255 !!!!FIXME MAKE SURE SIZE CANNOT PASS 255
     size[3] = '\0';
 
     int barsRead = 0;
@@ -322,6 +322,7 @@ void *read_data(void *arg)
             }
         }
 
+        // FIXME make sure we do not grab more than 1 message!!!!!!!!
 
         // Parse message
         char** tokens = malloc(sizeof(char*) * bytes);
