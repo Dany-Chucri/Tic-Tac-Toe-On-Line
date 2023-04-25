@@ -12,7 +12,7 @@
 #include <pthread.h>
 #include <errno.h>
 
-// Temporary definitons based on Menendez's example code 
+// Some definitions
 #define QUEUE_SIZE 8 //represents a maximum size of requests to attempt to queue for listening before rejecting any further requests
 #define BUFSIZE 1024
 #define HOSTSIZE 100
@@ -64,6 +64,61 @@ struct connection_data {
     int fd;
 };
 
+// Server stucture to keep track of concurrent games (multithreaded approach), simple linked list with "game" nodes
+// FIXME implement locks
+typedef struct {
+    struct game* first; // Reference to first game to maintain linked list structure
+    int gameCount; // How many games the server has setup
+} server;
+
+// "game" node structure that contains a game ID, 2 players in each game, board state, and which player's turn it is
+struct game{
+    int gameID; // based on gameCount of server
+    char playerOne[256]; // Player 1's name
+    int fd1; // Player 1's connection socket file descriptor
+    char playerTwo[256]; // Player 2 name
+    int fd2; // Player 2's connection socket file descriptor
+    const char* board; // Tic-Tac-Toe game board
+    int turn; // Odd means player 1, even means player 2
+
+    struct game* next; // Reference to the next game (if any) to maintain linked list structure
+};
+
+// Sets up game server using server structure
+server* createGameServer() {
+    server *gameServer = malloc(sizeof(server));
+    gameServer->first = NULL;
+    gameServer->gameCount = 0;
+    return gameServer;
+}
+
+// Sets up a game instance using the game struct
+void newGame(server* gameServer) {
+    struct game* match = malloc(sizeof(struct game));
+
+    // Some struct parameter initializers
+    match->gameID = gameServer->gameCount;
+    match->board = ".........";
+    match->turn = 1;
+    match->next = NULL;
+
+    if (gameServer->first == NULL) { // First game in the server
+        gameServer->first = match;
+        gameServer->gameCount++;
+    }
+    else { // Iterate through list of games to place the most recent match at the end
+        struct game *ptr = gameServer->first;
+        while (ptr->next != NULL)
+        {
+            ptr = ptr->next;
+        }
+        ptr->next = match;
+        gameServer->gameCount++;
+    }
+
+    return;
+}
+
 // Message parser
 int tokenize(char* buf, char** tokens) {
     char* ptr;
@@ -84,6 +139,7 @@ int tokenize(char* buf, char** tokens) {
             ptr++;
         }
         else if (*ptr == '|'){
+            tokens[tokptr1][tokptr2] = '\0';
             tokptr1++; tokptr2 = 0;
             ptr++;
         }
@@ -125,6 +181,7 @@ int setMaxBars(msg_type type) {
 // Message field error checker
 msg_err parsePacket(char* buf, int fd)
 {
+    // No need to check for empty buffer, already done by call to read
     char *ptr = buf;
 
     int typesize = 4;
@@ -132,10 +189,13 @@ msg_err parsePacket(char* buf, int fd)
     msgtype[4] = '\0';
     msg_type type = INVLTYPE;
 
-    char size[4];// Size ranges from 0-255 !!!!FIXME MAKE SURE SIZE CANNOT PASS 255
+    char size[4]; // Size ranges from 0-255 !!!!FIXME MAKE SURE SIZE CANNOT PASS 255
     size[3] = '\0';
 
     int barsRead = 0;
+
+    // Skip white space before a message (possibly from null terminator overflow?)
+    while (*ptr == '\0') ptr++;
 
     // First check that a valid message type was sent
     for (int i = 0; i < typesize; i++) {
@@ -281,8 +341,8 @@ msg_err parsePacket(char* buf, int fd)
 }
 
 char* createBoard() {
-    char* board = malloc(9 * sizeof(char));
-    memset(board, (char) 78, 9); //char 78 is '.'
+    char* board = ".........";
+    //memset(board, (char) 78, 9); //char 78 is '.'
     return board;
 }
 void printBoard(char* board) {
@@ -291,7 +351,7 @@ void printBoard(char* board) {
     }
 }
 
-// Temporary method for reading data from a client (threaded approach)
+// Method for reading data from a client (threaded approach)
 void *read_data(void *arg)
 {
     struct connection_data *con = arg;
@@ -307,7 +367,6 @@ void *read_data(void *arg)
 
     printf("Connection from %s:%s\n", host, port);
 
-    //msg_err errStat = VALID;
     while (active && (bytes = read(con->fd, buf, BUFSIZE)) > 0) {
         buf[bytes] = '\0';
 
@@ -343,14 +402,15 @@ void *read_data(void *arg)
             memset(tokens[i], (char) 0, bytes);
         }
         
-        int draw_match = 0;
         int tokerror = tokenize(buf, tokens);
         if (tokerror != 0) {//error has occured tokenizing
             printf("Error occured while tokenizing!\n"); // FIXME more specific error checking
         }
         else {
             printf("First Token: %s\n", tokens[0]);
+            
             //if (first token is PLAY, MOVE, RSGN, or DRAW) //Make methods for each of these that do their proper function and returns -1 if unsuccessful or invalid
+            int draw_match = 0;
             if(checkType(tokens[0]) == PLAY) {
                 printf("Player Name: %s\n", tokens[2]); ///CHECK IF NAME IS TAKEN
                 char* board = createBoard();
@@ -365,7 +425,7 @@ void *read_data(void *arg)
             else if(checkType(tokens[0]) == DRAW && tokens[2][0] == 'S') {
                 //request other client for a draw
                 draw_match = 1; //means draw is suggested
-                write();
+                //write();
             }
             else if(checkType(tokens[0]) == DRAW && tokens[2][0] == 'R') {
                 //
@@ -404,7 +464,7 @@ void *read_data(void *arg)
     return NULL;
 }
 
-// Temporary method for setting up server sockets
+// Method for setting up server sockets
 int open_listener(char *service, int queue_size)
 {
     struct addrinfo hint, *info_list, *info;
@@ -472,6 +532,9 @@ int main(int argc, char** argv)
 
     printf("Listening for incoming connections\n");
 
+    server *gameServer = createGameServer();
+    int tempConnects = 0;
+
     while (active) {
         con = (struct connection_data *)malloc(sizeof(struct connection_data));
         con->addr_len = sizeof(struct sockaddr_storage);
@@ -483,6 +546,14 @@ int main(int argc, char** argv)
             // FIXME check for specific error conditions
             continue;
         }
+
+        //printf("This is before the moduluus check\n");
+        // Make a new game when needed
+        if (tempConnects % 2 == 0) { 
+            printf("Appending a new game to the server list\n");
+            newGame(gameServer);
+        }
+        tempConnects++;
 
         // Temporarily disable signals
         // (the worker thread will inherit this mask, ensuring that SIGINT is only delivered to this thread)
@@ -510,6 +581,17 @@ int main(int argc, char** argv)
             exit(EXIT_FAILURE);
         }
     }
+
+    // Free game server and all associated games
+    struct game *temp;
+    while(gameServer->first != NULL)
+    {   
+        temp = gameServer->first;
+        gameServer->first = gameServer->first->next;
+        free(temp);
+    }
+    
+    free(gameServer);
 
     puts("Shutting down");
     close(listener);
