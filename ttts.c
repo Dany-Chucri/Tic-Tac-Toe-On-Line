@@ -214,8 +214,16 @@ msg_err parsePacket(char* buf, int fd)
     long int numerSize = strtol(size, NULL, 10); // Converts the read size to a useable value
     printf("Give size is read as %ld\n", numerSize);
 
-    // Cases for 0 size given
-    if (numerSize == 0 && (type == WAIT || type == RSGN)) return VALID;
+     // Cases for 0 size given
+    if (numerSize == 0 && (type == WAIT || type == RSGN)) {
+        if (*ptr != '\0' && *ptr != '\n') { // There should be no fields after for a 0 size message
+            printf("Field size mismatch!\n");
+            write(fd, "Field size mismatch!\n", 22);
+            return NEBYTE;
+        }
+        else return VALID;
+        return VALID;
+    }
     else if (numerSize == 0) {
         printf("Invalid size3!\n");
         write(fd, "Invalid size!\n", 15);
