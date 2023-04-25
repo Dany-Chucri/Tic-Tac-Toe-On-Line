@@ -274,16 +274,8 @@ msg_err parsePacket(char* buf, int fd)
     long int numerSize = strtol(size, NULL, 10); // Converts the read size to a useable value
     printf("Give size is read as %ld\n", numerSize);
 
-     // Cases for 0 size given
-    if (numerSize == 0 && (type == WAIT || type == RSGN)) {
-        if (*ptr != '\0' && *ptr != '\n') { // There should be no fields after for a 0 size message
-            printf("Field size mismatch!\n");
-            write(fd, "Field size mismatch!\n", 22);
-            return NEBYTE;
-        }
-        else return VALID;
-        return VALID;
-    }
+    // Cases for 0 size given
+    if (numerSize == 0 && (type == WAIT || type == RSGN)) return VALID;
     else if (numerSize == 0) {
         printf("Invalid size3!\n");
         write(fd, "Invalid size!\n", 15);
@@ -340,15 +332,42 @@ msg_err parsePacket(char* buf, int fd)
     return VALID;
 }
 
-char* createBoard() {
-    char* board = ".........";
-    //memset(board, (char) 78, 9); //char 78 is '.'
+char* createBoard(char* board) {
+    board = "........."; //char* board = malloc(9 * sizeof(char));
+    //memset(board, '.', 9); //char 46 is '.'
     return board;
 }
 void printBoard(char* board) {
     for (int i = 0; i < 9; i++) { //could also just print %s tbh
         printf("%c", board[i]);
     }
+}
+
+int check_position(char* board, char* position) {
+    int board_index;
+    if (strcmp(position, "1,1") == 0) board_index = 0;
+    else if (strcmp(position, "1,2") == 0) board_index = 1;
+    else if (strcmp(position, "1,3") == 0) board_index = 2;
+    else if (strcmp(position, "2,1") == 0) board_index = 3;
+    else if (strcmp(position, "2,2") == 0) board_index = 4;
+    else if (strcmp(position, "2,3") == 0) board_index = 5;
+    else if (strcmp(position, "3,1") == 0) board_index = 6;
+    else if (strcmp(position, "3,2") == 0) board_index = 7;
+    else if (strcmp(position, "3,3") == 0) board_index = 8;
+    else return -1;
+
+    if (board[board_index] == 'X' || board[board_index] == 'O') return -1;
+    else return board_index; // board[board_index] == '.';
+}
+
+int make_move(char* board, char* position, char* role) {
+    int board_index = check_position(board, position);
+    if (board_index == -1) return -1; //INVL MOVE
+    else {
+        board[board_index] = role[0];
+        return 0;
+    }
+
 }
 
 // Method for reading data from a client (threaded approach)
@@ -366,6 +385,7 @@ void *read_data(void *arg)
     }
 
     printf("Connection from %s:%s\n", host, port);
+    char* board = ".........";
 
     while (active && (bytes = read(con->fd, buf, BUFSIZE)) > 0) {
         buf[bytes] = '\0';
@@ -395,56 +415,120 @@ void *read_data(void *arg)
         // FIXME make sure we do not grab more than 1 message!!!!!!!!
 
         // Parse message
-        char** tokens = malloc(sizeof(char*) * bytes);
-        memset(tokens, (char) 0, bytes);
-        for (int i = 0; i < bytes; i++) {
-            tokens[i] = malloc(sizeof(char) * bytes);
-            memset(tokens[i], (char) 0, bytes);
+        char** tokens = malloc(sizeof(char*) * 5); //MAX FIELDS
+        memset(tokens, (char) 0, 5);
+        for (int i = 0; i < 5; i++) {
+            tokens[i] = malloc(sizeof(char) * 256); //MAX FIELD SIZE
+            memset(tokens[i], (char) 0, 256);
         }
-        
+
         int tokerror = tokenize(buf, tokens);
         if (tokerror != 0) {//error has occured tokenizing
             printf("Error occured while tokenizing!\n"); // FIXME more specific error checking
         }
         else {
             printf("First Token: %s\n", tokens[0]);
-            
             //if (first token is PLAY, MOVE, RSGN, or DRAW) //Make methods for each of these that do their proper function and returns -1 if unsuccessful or invalid
             int draw_match = 0;
+
             if(checkType(tokens[0]) == PLAY) {
+
+                // FIXME for
                 printf("Player Name: %s\n", tokens[2]); ///CHECK IF NAME IS TAKEN
-                char* board = createBoard();
+                //board = createBoard();
                 active_game = 1;
 
+                //put in play check
+
             }
-            else if(checkType(tokens[0]) == MOVE) ;
+            else if(checkType(tokens[0]) == MOVE) {
+                // This now assumes that there is an active game between 2 players
+                // FIXME first grab player information from synchronized structures:
+                   // playerOne, p1length, fd1, playerTwo, p2length, fd2, etc.
+
+                // MASSIVE FIXME!!!!!!!!!!!!!!!!!!!!!!!! DO NOT USE CON FD IN FINAL, USE SPECIFIC PLAYER DESCRIPTORS!!!!!!!!!!!!!//////////////////////////
+
+                if (make_move(board, tokens[3], tokens[2]) == -1) {
+                    printf("INVL|24|That space is occupied.|\n");  
+                    write(con->fd, "INVL|24|That space is occupied.|", 33); 
+                    write(con->fd, "\n", 2);
+                }
+                else {
+                    printf("MOVD|16|%s|%s|%s|\n", tokens[2], tokens[3], board); // FIXME PRINTF TO OTHER CLIENT
+                    //write(con->fd, "MOVD|16|%s|%s|%s|", tokens[2], tokens[3], board); THIS DOESN"T WORK, LOOK UNDER THIS FOR THE WORKING VERSION
+                    
+                    // this is to write back to the client that their move was successful
+                    write(con->fd, "MOVD|16|", 9);
+                    write(con->fd, tokens[2], strlen(tokens[2]));
+                    write(con->fd, "|", 2);
+                    write(con->fd, tokens[3], strlen(tokens[3]));
+                    write(con->fd, "|", 2); 
+                    write(con->fd, tokens[2], strlen(board)); 
+                    write(con->fd, "|", 2);
+                    write(con->fd, "\n", 2);
+
+                    // FIXME to other client, grab file descriptor
+                    write(con->fd, "MOVD|16|", 9);
+                    write(con->fd, tokens[2], strlen(tokens[2]));
+                    write(con->fd, "|", 2);
+                    write(con->fd, tokens[3], strlen(tokens[3]));
+                    write(con->fd, "|", 2); 
+                    write(con->fd, tokens[2], strlen(board)); 
+                    write(con->fd, "|", 2);
+                    write(con->fd, "\n", 2);
+                }
+            }
             else if(checkType(tokens[0]) == RSGN) {
                 active_game = 0;
-                //remove the name from the global linked list
+                write(con->fd, "OVER|", 6);
+                //write(con->fd, (strlen() + 6), 3); // FIXME grab player name and length
+                //write(con->fd, name, strlen(name));
+                write(con->fd, "has resigned.|", 6);
+
+                // FIXME PRINT TO OTHER PERSON HERE AS WELL
             }
             else if(checkType(tokens[0]) == DRAW && tokens[2][0] == 'S') {
-                //request other client for a draw
                 draw_match = 1; //means draw is suggested
-                //write();
+                
+                // FIXME change this to write to the other client
+                write(con->fd, "DRAW|2|S|", 10);
+                write(con->fd, "\n", 2);
             }
             else if(checkType(tokens[0]) == DRAW && tokens[2][0] == 'R') {
                 //
-                if(draw_match == 0) printf("INVL TYPE - TRY AGAIN"); //no suggestion was made to reject or accept yet
+                if(draw_match == 0) {
+                    write(con->fd, "INVL|23|No draw suggested yet.|", 32); //no suggestion was made to reject or accept yet
+                    write(con->fd, "\n", 2);
+                }
                 else {
-
+                    draw_match = 0;
+                    // FIXME change this to write to the other client
+                    write(con->fd, "DRAW|2|R|", 10);
+                    write(con->fd, "\n", 2);
                 }
             }
             else if(checkType(tokens[0]) == DRAW && tokens[2][0] == 'A') {
                 //
-                if(draw_match == 0) printf("INVL TYPE - TRY AGAIN"); //no suggestion was made to reject or accept yet
+                if(draw_match == 0) {
+                    printf("INVL TYPE - TRY AGAIN"); //no suggestion was made to reject or accept yet
+                    write(con->fd, "\n", 2);
+                }
+                
                 else {
+                    active_game = 0;
 
+                    write(con->fd, "OVER|5|Draw|", 13);
+                    write(con->fd, "\n", 2);
+
+                    // FIXME make this to the other client
+                    write(con->fd, "OVER|5|Draw|", 13);
+                    write(con->fd, "\n", 2);
                 }
             }
 
         }
 
-        for (int i = 0; i < bytes; i++) {
+        for (int i = 0; i < 5; i++) {
             free(tokens[i]);
         }
         free(tokens);
@@ -465,6 +549,7 @@ void *read_data(void *arg)
 }
 
 // Method for setting up server sockets
+
 int open_listener(char *service, int queue_size)
 {
     struct addrinfo hint, *info_list, *info;
@@ -546,7 +631,7 @@ int main(int argc, char** argv)
             // FIXME check for specific error conditions
             continue;
         }
-
+        
         //printf("This is before the moduluus check\n");
         // Make a new game when needed
         if (tempConnects % 2 == 0) { 
@@ -590,9 +675,8 @@ int main(int argc, char** argv)
         gameServer->first = gameServer->first->next;
         free(temp);
     }
-    
-    free(gameServer);
 
+    free(gameServer);
     puts("Shutting down");
     close(listener);
 
